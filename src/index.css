@@ -6,6 +6,9 @@
   --line: rgba(255, 255, 255, 0.08);
   --accent: #ff6a00;
   --accent-soft: rgba(255, 106, 0, 0.14);
+  --accent-cool: #42d6c2;
+  --radius: 8px;
+  --radius-sm: 6px;
   --max-width: 1180px;
   --font-sans: "Space Grotesk", "Segoe UI", sans-serif;
   --font-mono: "IBM Plex Mono", "Consolas", monospace;
@@ -16,7 +19,8 @@
   font-weight: 400;
   color: var(--text);
   background:
-    radial-gradient(circle at top, rgba(255, 106, 0, 0.12), transparent 35%),
+    radial-gradient(circle at top, rgba(255, 106, 0, 0.1), transparent 35%),
+    radial-gradient(circle at bottom left, rgba(66, 214, 194, 0.08), transparent 32%),
     linear-gradient(180deg, #091216 0%, #060c10 100%);
   font-synthesis: none;
   text-rendering: optimizeLegibility;

@@ -52,6 +52,22 @@ const fieldNotes = [
   "Systems designed to be inspected, audited, and trusted under pressure.",
 ];
 
+const inquiryEndpoint = import.meta.env.VITE_INQUIRY_ENDPOINT?.trim() || "/api/send-inquiry";
+
+const getSubmissionError = async (response) => {
+  try {
+    const body = await response.json();
+
+    if (typeof body.error === "string") {
+      return body.error;
+    }
+  } catch {
+    // Some hosts return an HTML 404/500 page for missing serverless routes.
+  }
+
+  return `Email endpoint returned ${response.status}.`;
+};
+
 function SignalField() {
   const mountRef = useRef(null);
 
@@ -151,13 +167,23 @@ function SignalField() {
 
       const handlePointerMove = (event) => {
         const bounds = mountNode.getBoundingClientRect();
-        pointerX = ((event.clientX - bounds.left) / bounds.width - 0.5) * 1.35;
-        pointerY = ((event.clientY - bounds.top) / bounds.height - 0.5) * 1.1;
+        const width = bounds.width || 1;
+        const height = bounds.height || 1;
+        pointerX = ((event.clientX - bounds.left) / width - 0.5) * 1.35;
+        pointerY = ((event.clientY - bounds.top) / height - 0.5) * 1.1;
+      };
+
+      const handlePointerLeave = () => {
+        pointerX = 0;
+        pointerY = 0;
       };
 
       resize();
+      const resizeObserver = new ResizeObserver(resize);
+      resizeObserver.observe(mountNode);
       window.addEventListener("resize", resize);
-      window.addEventListener("pointermove", handlePointerMove);
+      mountNode.addEventListener("pointermove", handlePointerMove, { passive: true });
+      mountNode.addEventListener("pointerleave", handlePointerLeave);
 
       const clock = new THREE.Clock();
 
@@ -184,8 +210,10 @@ function SignalField() {
       renderFrame();
 
       cleanup = () => {
+        resizeObserver.disconnect();
         window.removeEventListener("resize", resize);
-        window.removeEventListener("pointermove", handlePointerMove);
+        mountNode.removeEventListener("pointermove", handlePointerMove);
+        mountNode.removeEventListener("pointerleave", handlePointerLeave);
         window.cancelAnimationFrame(animationFrameId);
 
         if (mountNode.contains(renderer.domElement)) {
@@ -219,9 +247,11 @@ function ContactForm() {
     email: "",
     focus: "",
     message: "",
+    company: "",
   });
-  const [status, setStatus] = useState("Submit a brief and we will stage it into a clean handoff block.");
+  const [status, setStatus] = useState("Submit a brief and we will send it to the Nove Mani inbox.");
   const [preview, setPreview] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const updateField = (event) => {
     const { name, value } = event.target;
@@ -230,6 +260,11 @@ function ContactForm() {
 
   const handleSubmit = async (event) => {
     event.preventDefault();
+
+    if (form.company) {
+      setStatus("Brief received.");
+      return;
+    }
 
     const brief = [
       "NOVE MANI // INBOUND BRIEF",
@@ -242,12 +277,35 @@ function ContactForm() {
     ].join("\n");
 
     setPreview(brief);
+    setIsSubmitting(true);
 
     try {
-      await navigator.clipboard.writeText(brief);
-      setStatus("Brief staged. The formatted handoff has been copied to your clipboard.");
-    } catch {
-      setStatus("Brief staged. Clipboard access was blocked, so the formatted handoff is shown below.");
+      const response = await fetch(inquiryEndpoint, {
+        method: "POST",
+        headers: {
+          Accept: "application/json",
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          name: form.name,
+          email: form.email,
+          focus: form.focus,
+          message: form.message,
+          company: form.company,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error(await getSubmissionError(response));
+      }
+
+      setStatus("Brief sent. We have the details and can follow up from here.");
+      setForm({ name: "", email: "", focus: "", message: "", company: "" });
+    } catch (error) {
+      setStatus(`The email send did not complete: ${error.message}`);
+      console.error(error);
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -263,6 +321,17 @@ function ContactForm() {
 
       <div className="contact-grid">
         <form className="contact-form" onSubmit={handleSubmit}>
+          <label className="field field--hidden">
+            <span>Company</span>
+            <input
+              name="company"
+              value={form.company}
+              onChange={updateField}
+              tabIndex="-1"
+              autoComplete="off"
+            />
+          </label>
+
           <label className="field">
             <span>Name</span>
             <input
@@ -270,6 +339,7 @@ function ContactForm() {
               value={form.name}
               onChange={updateField}
               placeholder="Operator name"
+              autoComplete="name"
               required
             />
           </label>
@@ -282,6 +352,7 @@ function ContactForm() {
               value={form.email}
               onChange={updateField}
               placeholder="you@company.com"
+              autoComplete="email"
               required
             />
           </label>
@@ -310,8 +381,8 @@ function ContactForm() {
           </label>
 
           <div className="contact-actions">
-            <button className="button" type="submit">
-              Stage Brief
+            <button className="button" type="submit" disabled={isSubmitting}>
+              {isSubmitting ? "Sending" : "Send Brief"}
             </button>
             <p className="status" aria-live="polite">
               {status}
@@ -321,10 +392,10 @@ function ContactForm() {
 
         <aside className="brief-panel">
           <p className="eyebrow">Handoff block</p>
-          <h3>What this intake does right now</h3>
+          <h3>What this intake sends</h3>
           <ul className="brief-list">
             <li>Formats the submission into a concise operator brief.</li>
-            <li>Copies that brief to the clipboard when the browser allows it.</li>
+            <li>Sends it through the private Resend API endpoint.</li>
             <li>Leaves the output visible here so nothing gets lost.</li>
           </ul>
           <pre className="brief-preview">{preview || "No brief staged yet."}</pre>
@@ -439,9 +510,9 @@ export default function App() {
             ))}
           </div>
         </section>
-      </main>
 
-      <ContactForm />
+        <ContactForm />
+      </main>
 
       <footer className="footer">
         <span>{new Date().getFullYear()} Nove Mani LLC</span>
